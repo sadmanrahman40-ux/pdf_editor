@@ -1,0 +1,253 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>PDF Editor</title>
+<style>
+:root{--bg:#f2f1ee;--panel:#fff;--fg:#1f1e1b;--mut:#6b6962;--bd:#dcdad3;--acc:#2f5fd0;--accfg:#fff;--shadow:0 2px 12px rgba(0,0,0,.18);color-scheme:light;box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){--bg:#1b1b1a;--panel:#262624;--fg:#ecebe6;--mut:#a09e96;--bd:#3a3935;--acc:#6b93f0;--accfg:#10131a;--shadow:0 2px 12px rgba(0,0,0,.5);color-scheme:dark}}
+:root[data-theme="dark"]{--bg:#1b1b1a;--panel:#262624;--fg:#ecebe6;--mut:#a09e96;--bd:#3a3935;--acc:#6b93f0;--accfg:#10131a;--shadow:0 2px 12px rgba(0,0,0,.5);color-scheme:dark}
+*{box-sizing:border-box}
+html,body{height:100%;margin:0}
+body{background:var(--bg);color:var(--fg);font:14px/1.4 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;display:flex;flex-direction:column}
+header{display:flex;flex-wrap:wrap;gap:6px 10px;align-items:center;padding:8px 12px;background:var(--panel);border-bottom:1px solid var(--bd)}
+.grp{display:flex;gap:4px;align-items:center;padding-right:10px;border-right:1px solid var(--bd)}
+.grp:last-child{border:0}
+button,.btn{font:inherit;color:var(--fg);background:transparent;border:1px solid var(--bd);border-radius:8px;padding:6px 10px;cursor:pointer;white-space:nowrap}
+button:hover,.btn:hover{background:var(--bg)}
+button.on{background:var(--acc);color:var(--accfg);border-color:var(--acc)}
+button.pri{background:var(--acc);color:var(--accfg);border-color:var(--acc);font-weight:600}
+button:disabled{opacity:.4;cursor:default}
+input[type=color]{width:30px;height:30px;padding:0;border:1px solid var(--bd);border-radius:8px;background:none}
+input[type=number]{width:56px;font:inherit;padding:5px;border:1px solid var(--bd);border-radius:8px;background:var(--bg);color:var(--fg)}
+label{color:var(--mut);font-size:12px;display:flex;gap:4px;align-items:center}
+main{flex:1;overflow:auto;padding:20px;display:flex;justify-content:center;align-items:flex-start}
+#wrap{position:relative;box-shadow:var(--shadow);background:#fff;display:none}
+#wrap canvas{display:block}
+#ov{position:absolute;inset:0;touch-action:none}
+#txt{position:absolute;display:none;border:1px dashed var(--acc);background:rgba(255,255,255,.85);color:#000;padding:0;margin:0;outline:none;font-family:Helvetica,Arial,sans-serif;min-width:80px}
+#empty{margin:auto;text-align:center;max-width:420px;padding:40px 24px;border:2px dashed var(--bd);border-radius:16px;color:var(--mut)}
+#empty.drag{border-color:var(--acc);background:var(--panel)}
+#empty h1{color:var(--fg);font-size:22px;margin:0 0 6px}
+#md{position:fixed;inset:0;background:rgba(0,0,0,.45);display:flex;align-items:center;justify-content:center;padding:16px;z-index:5}#md[hidden]{display:none}#mc{background:var(--bg);border-radius:14px;max-width:900px;width:100%;max-height:88vh;overflow:auto;padding:14px}#mh{display:flex;justify-content:space-between;align-items:center;margin-bottom:10px}#grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(210px,1fr));gap:10px}.card{background:var(--panel);border:1px solid var(--bd);border-radius:12px;padding:12px;display:flex;flex-direction:column;gap:6px}.card p{margin:0;color:var(--mut);font-size:12px;flex:1}.card input,.card select{font:inherit;padding:5px;border:1px solid var(--bd);border-radius:8px;background:var(--bg);color:var(--fg);width:100%}
+#toast{position:fixed;left:50%;bottom:calc(20px + env(safe-area-inset-bottom,0px));transform:translateX(-50%);background:var(--fg);color:var(--bg);padding:8px 14px;border-radius:8px;opacity:0;transition:opacity .2s;pointer-events:none;max-width:90vw}
+#toast.show{opacity:1}
+</style>
+</head>
+<body>
+<header>
+  <div class="grp"><label class="btn" style="cursor:pointer;color:var(--fg)">Open PDF<input id="file" type="file" accept="application/pdf" hidden></label><button id="tb" class="pri">All tools</button></div>
+  <div class="grp" id="tools">
+    <button data-t="text" class="on">Text</button>
+    <button data-t="pen">Draw</button>
+    <button data-t="hl">Highlight</button>
+    <button data-t="rect">Box</button>
+    <button data-t="wo">Whiteout</button>
+    <button data-t="erase">Erase</button>
+  </div>
+  <div class="grp">
+    <input id="color" type="color" value="#d62828" title="Color">
+    <label>Size <input id="size" type="number" min="6" max="96" value="16"></label>
+    <button id="undo" disabled>Undo</button>
+  </div>
+  <div class="grp">
+    <button id="prev" disabled>←</button>
+    <span id="pg" style="min-width:64px;text-align:center">–</span>
+    <button id="next" disabled>→</button>
+    <button id="zo">−</button><button id="zi">+</button>
+    <button id="mvl" disabled>Move ◀</button><button id="mvr" disabled>▶</button><button id="del" disabled>Delete page</button>
+  </div>
+  <div class="grp"><button id="save" class="pri" disabled>Download PDF</button></div>
+</header>
+<main id="main">
+  <div id="empty"><h1>Edit a PDF in your browser</h1><p>Drop a PDF here or use <b>Open PDF</b>. Add text, draw, highlight, box or white out content, delete pages, then download. Files never leave your device.</p></div>
+  <div id="wrap"><canvas id="cv"></canvas><canvas id="ov"></canvas><input id="txt"></div>
+</main>
+<div id="md" hidden><div id="mc"><div id="mh"><b>PDF tools</b><button id="mx">Close</button></div><div id="grid"></div></div></div>
+<div id="toast"></div>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/pdf-lib/1.17.1/pdf-lib.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+<script>
+(function(){
+const $=id=>document.getElementById(id);
+pdfjsLib.GlobalWorkerOptions.workerSrc='https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+let doc=null,bytes=null,name='document.pdf',pages=[],cur=0,zoom=1.3,tool='text',ann={},hist=[],draft=null,tok=0,dl=null;
+const cv=$('cv'),ov=$('ov'),wrap=$('wrap'),txt=$('txt'),octx=ov.getContext('2d');
+const dpr=Math.min(window.devicePixelRatio||1,2);
+try{claude.use('downloads').then(d=>{dl=d}).catch(()=>{})}catch(e){}
+
+function toast(m){const t=$('toast');t.textContent=m;t.classList.add('show');clearTimeout(toast.t);toast.t=setTimeout(()=>t.classList.remove('show'),2800)}
+const cur_ann=()=>ann[pages[cur]]||(ann[pages[cur]]=[]);
+function snap(){hist.push(JSON.stringify({ann,pages:pages.slice(),cur}));if(hist.length>60)hist.shift();$('undo').disabled=false}
+function undo(){if(!hist.length)return;const s=JSON.parse(hist.pop());ann=s.ann;pages=s.pages;cur=Math.min(s.cur,pages.length-1);$('undo').disabled=!hist.length;show()}
+
+async function load(file){
+  try{
+    bytes=new Uint8Array(await file.arrayBuffer());name=file.name||'document.pdf';
+    doc=await pdfjsLib.getDocument({data:bytes.slice()}).promise;
+    pages=[...Array(doc.numPages).keys()];cur=0;ann={};hist=[];$('undo').disabled=true;
+    $('empty').style.display='none';wrap.style.display='block';$('save').disabled=false;
+    await show();
+  }catch(e){toast(e&&e.name==='PasswordException'?'Password-protected PDFs aren’t supported.':'Couldn’t open that file as a PDF.')}
+}
+async function show(){
+  commitText();
+  const my=++tok,pg=await doc.getPage(pages[cur]+1),vp=pg.getViewport({scale:zoom});
+  if(my!==tok)return;
+  for(const c of[cv,ov]){c.width=Math.round(vp.width*dpr);c.height=Math.round(vp.height*dpr);c.style.width=vp.width+'px';c.style.height=vp.height+'px'}
+  wrap.style.width=vp.width+'px';wrap.style.height=vp.height+'px';
+  $('pg').textContent=(cur+1)+' / '+pages.length;
+  $('prev').disabled=$('mvl').disabled=cur===0;$('next').disabled=$('mvr').disabled=cur>=pages.length-1;$('del').disabled=pages.length<2;
+  redraw();
+  await pg.render({canvasContext:cv.getContext('2d'),viewport:vp,transform:[dpr,0,0,dpr,0,0]}).promise.catch(()=>{});
+}
+function drawA(a){
+  const x=octx;x.save();x.lineCap='round';x.lineJoin='round';
+  if(a.t==='pen'){x.strokeStyle=a.c;x.lineWidth=a.w;x.beginPath();a.p.forEach((q,i)=>i?x.lineTo(q[0],q[1]):x.moveTo(q[0],q[1]));if(a.p.length===1)x.lineTo(a.p[0][0]+.01,a.p[0][1]);x.stroke()}
+  else if(a.t==='text'){x.fillStyle=a.c;x.font=a.s+'px Helvetica, Arial, sans-serif';x.textBaseline='top';x.fillText(a.txt,a.x,a.y)}
+  else if(a.t==='hl'){x.globalAlpha=.35;x.fillStyle=a.c;x.fillRect(a.x,a.y,a.w0!==undefined?a.w0:a.w,a.h)}
+  else if(a.t==='wo'){x.fillStyle='#fff';x.fillRect(a.x,a.y,a.w0!==undefined?a.w0:a.w,a.h)}
+  else if(a.t==='rect'){x.strokeStyle=a.c;x.lineWidth=a.w;x.strokeRect(a.x,a.y,a.w2||a.w0,a.h)}
+  x.restore();
+}
+function redraw(){
+  octx.setTransform(1,0,0,1,0,0);octx.clearRect(0,0,ov.width,ov.height);
+  octx.setTransform(dpr*zoom,0,0,dpr*zoom,0,0);
+  (ann[pages[cur]]||[]).forEach(drawA);if(draft)drawA(draft);
+}
+const pt=e=>{const r=ov.getBoundingClientRect();return[(e.clientX-r.left)/zoom,(e.clientY-r.top)/zoom]};
+function bbox(a){
+  if(a.t==='pen'){const xs=a.p.map(q=>q[0]),ys=a.p.map(q=>q[1]),m=a.w/2+3;return[Math.min(...xs)-m,Math.min(...ys)-m,Math.max(...xs)+m,Math.max(...ys)+m]}
+  if(a.t==='text'){octx.font=a.s+'px Helvetica, Arial, sans-serif';return[a.x,a.y,a.x+octx.measureText(a.txt).width,a.y+a.s*1.2]}
+  return[a.x,a.y,a.x+(a.t==='rect'?a.w0:a.w),a.y+a.h];
+}
+let drag=null;
+ov.addEventListener('pointerdown',e=>{
+  if(!doc)return;const[x,y]=pt(e),c=$('color').value,s=+$('size').value||16;
+  if(tool==='text'){startText(x,y);e.preventDefault();return}
+  if(tool==='erase'){const L=cur_ann();for(let i=L.length-1;i>=0;i--){const b=bbox(L[i]);if(x>=b[0]&&x<=b[2]&&y>=b[1]&&y<=b[3]){snap();L.splice(i,1);redraw();break}}return}
+  ov.setPointerCapture(e.pointerId);drag=[x,y];
+  draft=tool==='pen'?{t:'pen',c,w:Math.max(1,s/6),p:[[x,y]]}:{t:tool,c,w:2,x,y,w2:0,h:0};
+  if(tool!=='pen'){draft.w=tool==='rect'?Math.max(1,s/8):0}
+  redraw();
+});
+ov.addEventListener('pointermove',e=>{
+  if(!drag||!draft)return;const[x,y]=pt(e);
+  if(draft.t==='pen')draft.p.push([x,y]);
+  else{draft.x=Math.min(drag[0],x);draft.y=Math.min(drag[1],y);draft.w0=Math.abs(x-drag[0]);draft.h=Math.abs(y-drag[1])}
+  redraw();
+});
+function endDrag(){
+  if(!drag||!draft)return;const d=draft;draft=null;drag=null;
+  if(d.t!=='pen'){if(d.w0<2||d.h<2){redraw();return}d.bw=d.w0;
+    d.w=d.t==='rect'?d.w:d.w0;if(d.t==='rect'){d.lw=d.w;}}
+  snap();
+  if(d.t==='rect'){cur_ann().push({t:'rect',c:d.c,w:d.lw,x:d.x,y:d.y,w0:d.bw,h:d.h,bw:d.bw})}
+  else if(d.t==='pen')cur_ann().push(d);
+  else cur_ann().push({t:d.t,c:d.c,x:d.x,y:d.y,w:d.bw,h:d.h});
+  redraw();
+}
+ov.addEventListener('pointerup',endDrag);ov.addEventListener('pointercancel',endDrag);
+
+let tx=null;
+function startText(x,y){
+  commitText();const s=+$('size').value||16;tx={x,y,s,c:$('color').value};
+  Object.assign(txt.style,{display:'block',left:x*zoom+'px',top:y*zoom+'px',fontSize:s*zoom+'px',lineHeight:'1.2',color:tx.c});
+  txt.value='';setTimeout(()=>txt.focus(),0);
+}
+function commitText(){
+  if(!tx)return;const v=txt.value.trim(),t=tx;tx=null;txt.style.display='none';
+  if(v){snap();cur_ann().push({t:'text',c:t.c,s:t.s,x:t.x,y:t.y,txt:v});redraw()}
+}
+txt.addEventListener('keydown',e=>{if(e.key==='Enter'){e.preventDefault();commitText()}else if(e.key==='Escape'){txt.value='';commitText()}});
+txt.addEventListener('blur',commitText);
+
+$('tools').addEventListener('click',e=>{const b=e.target.closest('button');if(!b)return;tool=b.dataset.t;document.querySelectorAll('#tools button').forEach(x=>x.classList.toggle('on',x===b));ov.style.cursor=tool==='text'?'text':'crosshair'});
+$('file').addEventListener('change',e=>{if(e.target.files[0])load(e.target.files[0]);e.target.value=''});
+$('prev').onclick=()=>{cur--;show()};$('next').onclick=()=>{cur++;show()};
+$('zi').onclick=()=>{zoom=Math.min(3,zoom+.2);if(doc)show()};$('zo').onclick=()=>{zoom=Math.max(.4,zoom-.2);if(doc)show()};
+$('del').onclick=()=>{if(pages.length<2)return;snap();pages.splice(cur,1);cur=Math.min(cur,pages.length-1);show()};
+$('undo').onclick=undo;
+addEventListener('keydown',e=>{if((e.ctrlKey||e.metaKey)&&e.key==='z'&&e.target!==txt){e.preventDefault();undo()}});
+const emp=$('empty');
+['dragenter','dragover'].forEach(n=>addEventListener(n,e=>{e.preventDefault();emp.classList.add('drag')}));
+['dragleave','drop'].forEach(n=>addEventListener(n,e=>{e.preventDefault();emp.classList.remove('drag')}));
+addEventListener('drop',e=>{const f=e.dataTransfer.files[0];if(f&&/pdf$/i.test(f.type||f.name))load(f)});
+
+const hex=h=>{const n=parseInt(h.slice(1),16);return PDFLib.rgb((n>>16&255)/255,(n>>8&255)/255,(n&255)/255)};
+async function bake(){
+  commitText();
+    const{PDFDocument,StandardFonts,rgb}=PDFLib,out=await PDFDocument.load(bytes,{ignoreEncryption:true}),font=await out.embedFont(StandardFonts.Helvetica);
+    for(const o of Object.keys(ann)){
+      const i=+o,L=ann[o];if(!L.length||!pages.includes(i))continue;
+      const pg=out.getPage(i),H=pg.getHeight();
+      for(const a of L){
+        if(a.t==='pen'){for(let k=1;k<a.p.length||k===1;k++){const p0=a.p[k-1],p1=a.p[k]||[p0[0]+.01,p0[1]];pg.drawLine({start:{x:p0[0],y:H-p0[1]},end:{x:p1[0],y:H-p1[1]},thickness:a.w,color:hex(a.c),lineCap:1})}}
+        else if(a.t==='text'){const t=a.txt.replace(/[^\x20-\x7E\xA0-\xFF]/g,'?');pg.drawText(t,{x:a.x,y:H-a.y-a.s*.8,size:a.s,font,color:hex(a.c)})}
+        else if(a.t==='hl')pg.drawRectangle({x:a.x,y:H-a.y-a.h,width:a.w,height:a.h,color:hex(a.c),opacity:.35});
+        else if(a.t==='wo')pg.drawRectangle({x:a.x,y:H-a.y-a.h,width:a.w,height:a.h,color:rgb(1,1,1)});
+        else if(a.t==='rect')pg.drawRectangle({x:a.x,y:H-a.y-a.h,width:a.bw,height:a.h,borderColor:hex(a.c),borderWidth:a.w});
+      }
+    }
+    const fin=await PDFDocument.create();(await fin.copyPages(out,pages)).forEach(p=>fin.addPage(p));
+    return fin.save();
+}
+$('save').onclick=async()=>{
+  const b=$('save');b.disabled=true;b.textContent='Working…';
+  try{
+    const data=await bake(),fn=name.replace(/\.pdf$/i,'')+'-edited.pdf';
+    if(dl){try{await dl.save({filename:fn,data});toast('Ready')}catch(e){if(!e||e.code!=='declined')toast('Couldn’t save the file here.')}}
+    else toast('Saving isn’t available in this view. Open the artifact in claude.ai to download.');
+  }catch(e){toast('Export failed: '+(e&&e.message||e))}
+  b.disabled=false;b.textContent='Download PDF';
+};
+
+/* ---- extra tools ---- */
+const{PDFDocument:PD,StandardFonts:SF,degrees:DG,rgb:RG}=PDFLib;
+async function openBytes(u8){bytes=u8;doc=await pdfjsLib.getDocument({data:u8.slice()}).promise;pages=[...Array(doc.numPages).keys()];cur=0;ann={};hist=[];$('undo').disabled=true;$('empty').style.display='none';wrap.style.display='block';$('save').disabled=false;await show()}
+const pick=(acc,multi)=>new Promise(r=>{const i=document.createElement('input');i.type='file';i.accept=acc;i.multiple=!!multi;i.onchange=()=>r([...i.files]);i.click()});
+async function give(data,fn){if(dl){try{await dl.save({filename:fn,data})}catch(e){if(!e||e.code!=='declined')toast('Couldn’t save the file here.')}}else toast('Saving isn’t available in this view.')}
+const base=async()=>doc?PD.load(await bake(),{ignoreEncryption:true}):PD.create();
+const rng=(s,n)=>{const r=[];s.split(',').forEach(x=>{const m=x.trim().match(/^(\d+)(?:-(\d+))?$/);if(!m)return;const a=+m[1],b=+(m[2]||m[1]);for(let i=Math.max(1,a);i<=Math.min(n,b);i++)r.push(i-1)});return r};
+async function raster(scale,q){
+  const d=await pdfjsLib.getDocument({data:(await bake()).slice()}).promise,res=[];
+  for(let i=1;i<=d.numPages;i++){const pg=await d.getPage(i),vp=pg.getViewport({scale}),c=document.createElement('canvas'),x=c.getContext('2d');c.width=vp.width;c.height=vp.height;x.fillStyle='#fff';x.fillRect(0,0,c.width,c.height);await pg.render({canvasContext:x,viewport:vp}).promise;const v1=pg.getViewport({scale:1});res.push({blob:await new Promise(r=>c.toBlob(r,'image/jpeg',q)),w:v1.width,h:v1.height})}
+  return res;
+}
+async function fromRaster(scale,q){const o=await PD.create();for(const r of await raster(scale,q)){const im=await o.embedJpg(await r.blob.arrayBuffer());o.addPage([r.w,r.h]).drawImage(im,{x:0,y:0,width:r.w,height:r.h})}return o.save()}
+const T=[
+{n:'Merge PDF',d:'Append one or more PDFs to the current document (in selection order).',free:1,f:async()=>{const fs=await pick('application/pdf',1);if(!fs.length)return false;const o=await base();for(const f of fs){const s=await PD.load(await f.arrayBuffer(),{ignoreEncryption:true});(await o.copyPages(s,s.getPageIndices())).forEach(p=>o.addPage(p))}if(!doc)name=fs[0].name;await openBytes(await o.save())}},
+{n:'Split PDF',d:'Extract pages into a new PDF. Example: 1-3,5',ph:'1-3,5',f:async v=>{const o=await base(),idx=rng(v,o.getPageCount());if(!idx.length)throw Error('Enter valid page numbers');const n=await PD.create();(await n.copyPages(o,idx)).forEach(p=>n.addPage(p));await give(await n.save(),'split.pdf')}},
+{n:'Rotate PDF',d:'Rotate every page.',sel:['90','180','270'],f:async v=>{const o=await base();o.getPages().forEach(p=>p.setRotation(DG((p.getRotation().angle+ +v)%360)));await openBytes(await o.save())}},
+{n:'Watermark',d:'Stamp diagonal text on every page.',ph:'CONFIDENTIAL',f:async v=>{if(!v)throw Error('Enter watermark text');const o=await base(),f=await o.embedFont(SF.HelveticaBold);o.getPages().forEach(p=>{const{width:w,height:h}=p.getSize(),s=Math.min(80,w*.8/f.widthOfTextAtSize(v,1)),tw=f.widthOfTextAtSize(v,s),k=Math.SQRT1_2;p.drawText(v,{x:w/2-tw/2*k,y:h/2-tw/2*k,size:s,font:f,color:RG(.5,.5,.5),opacity:.3,rotate:DG(45)})});await openBytes(await o.save())}},
+{n:'Page numbers',d:'Add numbers at the bottom center.',sel:['1','1 / N'],f:async v=>{const o=await base(),f=await o.embedFont(SF.Helvetica),N=o.getPageCount();o.getPages().forEach((p,i)=>{const t=v==='1'?''+(i+1):(i+1)+' / '+N,w=p.getWidth();p.drawText(t,{x:w/2-f.widthOfTextAtSize(t,11)/2,y:20,size:11,font:f,color:RG(.2,.2,.2)})});await openBytes(await o.save())}},
+{n:'Crop PDF',d:'Trim equal margins (in points, 72 = 1 inch) from every page.',ph:'36',f:async v=>{const m=+v;if(!(m>0))throw Error('Enter a margin');const s=await base(),n=await PD.create();for(const p of s.getPages()){const{width:w,height:h}=p.getSize();if(w<=2*m||h<=2*m)throw Error('Margin too large');const e=await n.embedPage(p,{left:m,bottom:m,right:w-m,top:h-m});n.addPage([w-2*m,h-2*m]).drawPage(e)}await openBytes(await n.save())}},
+{n:'Compress PDF',d:'Shrinks size by turning pages into images. Text becomes unselectable.',sel:['Medium','Strong'],f:async v=>{await openBytes(await fromRaster(v==='Medium'?1.4:1,v==='Medium'?.65:.45))}},
+{n:'Redact PDF',d:'Cover content with Whiteout first, then flatten so the text underneath is truly removed.',btn:'Flatten & redact',f:async()=>{await openBytes(await fromRaster(2,.92))}},
+{n:'PDF to JPG',d:'Download every page as a JPG in one ZIP.',f:async()=>{const z=new JSZip();(await raster(2,.9)).forEach((r,i)=>z.file('page-'+(i+1)+'.jpg',r.blob));await give(await z.generateAsync({type:'blob'}),name.replace(/\.pdf$/i,'')+'-pages.zip')}},
+{n:'JPG to PDF',d:'Turn JPG/PNG images into pages (added after the current document).',free:1,f:async()=>{const fs=await pick('image/jpeg,image/png',1);if(!fs.length)return false;const o=await base();for(const f of fs){const b=await f.arrayBuffer(),im=/png/i.test(f.type)?await o.embedPng(b):await o.embedJpg(b),k=Math.min(1,842/Math.max(im.width,im.height));o.addPage([im.width*k,im.height*k]).drawImage(im,{x:0,y:0,width:im.width*k,height:im.height*k})}await openBytes(await o.save())}}
+];
+const grid=$('grid');
+T.forEach(t=>{
+  const c=document.createElement('div');c.className='card';
+  const h=document.createElement('b');h.textContent=t.n;const p=document.createElement('p');p.textContent=t.d;c.append(h,p);
+  if(t.sel){const s=document.createElement('select');t.sel.forEach(o=>s.add(new Option(o)));c.append(s)}
+  else if(t.ph){const i=document.createElement('input');i.placeholder=t.ph;i.value=/^\d/.test(t.ph)&&!t.ph.includes('-')?t.ph:'';c.append(i)}
+  const b=document.createElement('button');b.textContent=t.btn||'Apply';
+  b.onclick=async()=>{
+    if(!doc&&!t.free)return toast('Open a PDF first.');
+    const inp=c.querySelector('input,select'),old=b.textContent;b.disabled=true;b.textContent='Working…';
+    try{if(await t.f(inp?inp.value:'')!==false){$('md').hidden=true;toast(t.n+' done')}}catch(e){toast('Failed: '+(e&&e.message||e))}
+    b.disabled=false;b.textContent=old;
+  };
+  c.append(b);grid.append(c);
+});
+$('tb').onclick=()=>{commitText();$('md').hidden=false};$('mx').onclick=()=>{$('md').hidden=true};
+$('mvl').onclick=()=>{if(cur<1)return;snap();[pages[cur-1],pages[cur]]=[pages[cur],pages[cur-1]];cur--;show()};
+$('mvr').onclick=()=>{if(cur>=pages.length-1)return;snap();[pages[cur+1],pages[cur]]=[pages[cur],pages[cur+1]];cur++;show()};
+})();
+</script>
+</body>
+</html>
