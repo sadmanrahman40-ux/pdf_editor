@@ -177,6 +177,7 @@ const emp=$('empty');
 addEventListener('drop',e=>{const f=e.dataTransfer.files[0];if(f&&/pdf$/i.test(f.type||f.name))load(f)});
 
 const hex=h=>{const n=parseInt(h.slice(1),16);return PDFLib.rgb((n>>16&255)/255,(n>>8&255)/255,(n&255)/255)};
+function dlA(d,fn){const u=URL.createObjectURL(d instanceof Blob?d:new Blob([d]));const a=document.createElement('a');a.href=u;a.download=fn;a.click();setTimeout(()=>URL.revokeObjectURL(u),4000)}
 async function bake(){
   commitText();
     const{PDFDocument,StandardFonts,rgb}=PDFLib,out=await PDFDocument.load(bytes,{ignoreEncryption:true}),font=await out.embedFont(StandardFonts.Helvetica);
@@ -199,7 +200,7 @@ $('save').onclick=async()=>{
   try{
     const data=await bake(),fn=name.replace(/\.pdf$/i,'')+'-edited.pdf';
     if(dl){try{await dl.save({filename:fn,data});toast('Ready')}catch(e){if(!e||e.code!=='declined')toast('Couldn’t save the file here.')}}
-    else toast('Saving isn’t available in this view. Open the artifact in claude.ai to download.');
+    else dlA(data,fn);
   }catch(e){toast('Export failed: '+(e&&e.message||e))}
   b.disabled=false;b.textContent='Download PDF';
 };
@@ -208,7 +209,7 @@ $('save').onclick=async()=>{
 const{PDFDocument:PD,StandardFonts:SF,degrees:DG,rgb:RG}=PDFLib;
 async function openBytes(u8){bytes=u8;doc=await pdfjsLib.getDocument({data:u8.slice()}).promise;pages=[...Array(doc.numPages).keys()];cur=0;ann={};hist=[];$('undo').disabled=true;$('empty').style.display='none';wrap.style.display='block';$('save').disabled=false;await show()}
 const pick=(acc,multi)=>new Promise(r=>{const i=document.createElement('input');i.type='file';i.accept=acc;i.multiple=!!multi;i.onchange=()=>r([...i.files]);i.click()});
-async function give(data,fn){if(dl){try{await dl.save({filename:fn,data})}catch(e){if(!e||e.code!=='declined')toast('Couldn’t save the file here.')}}else toast('Saving isn’t available in this view.')}
+async function give(data,fn){if(dl){try{await dl.save({filename:fn,data})}catch(e){if(!e||e.code!=='declined')toast('Couldn’t save the file here.')}}else dlA(data,fn)}
 const base=async()=>doc?PD.load(await bake(),{ignoreEncryption:true}):PD.create();
 const rng=(s,n)=>{const r=[];s.split(',').forEach(x=>{const m=x.trim().match(/^(\d+)(?:-(\d+))?$/);if(!m)return;const a=+m[1],b=+(m[2]||m[1]);for(let i=Math.max(1,a);i<=Math.min(n,b);i++)r.push(i-1)});return r};
 async function raster(scale,q){
@@ -217,11 +218,39 @@ async function raster(scale,q){
   return res;
 }
 async function fromRaster(scale,q){const o=await PD.create();for(const r of await raster(scale,q)){const im=await o.embedJpg(await r.blob.arrayBuffer());o.addPage([r.w,r.h]).drawImage(im,{x:0,y:0,width:r.w,height:r.h})}return o.save()}
+const POS=['Center','Top right','Bottom right','Bottom left','Top left'];
+async function stampPng(style,text,col){
+  const c=document.createElement('canvas'),F='bold 56px Helvetica,Arial,sans-serif';text=text.toUpperCase();let x;
+  if(style==='Round seal'){
+    c.width=c.height=600;x=c.getContext('2d');x.strokeStyle=x.fillStyle=col;x.textAlign='center';x.textBaseline='middle';x.translate(300,300);
+    [[285,10],[266,4],[150,5]].forEach(([r,w])=>{x.lineWidth=w;x.beginPath();x.arc(0,0,r,0,7);x.stroke()});
+    const arc=(s,top)=>{const n=s.length;x.font=n>14?'bold 40px Helvetica,Arial,sans-serif':F;const span=Math.min(Math.PI*1.3,n*(n>14?.15:.2));s.split('').forEach((ch,i)=>{const a=(n===1?0:i/(n-1)-.5)*span*(top?1:-1);x.save();x.rotate(a);x.translate(0,top?-208:208);if(!top)x.rotate(Math.PI);x.fillText(ch,0,0);x.restore()})};
+    arc(text,1);arc(new Date().toLocaleDateString(),0);x.font='140px Helvetica,Arial,sans-serif';x.fillText('\u2605',0,6);
+  }else{
+    const m=document.createElement('canvas').getContext('2d');m.font='bold 120px Helvetica,Arial,sans-serif';
+    const W=m.measureText(text).width+120,H=210,t=12*Math.PI/180;
+    c.width=Math.ceil(W*Math.cos(t)+H*Math.sin(t))+20;c.height=Math.ceil(W*Math.sin(t)+H*Math.cos(t))+20;
+    x=c.getContext('2d');x.strokeStyle=x.fillStyle=col;x.textAlign='center';x.textBaseline='middle';x.translate(c.width/2,c.height/2);x.rotate(-t);
+    x.lineWidth=14;x.strokeRect(-W/2,-H/2,W,H);x.lineWidth=5;x.strokeRect(-W/2+16,-H/2+16,W-32,H-32);x.font='bold 120px Helvetica,Arial,sans-serif';x.fillText(text,0,6);
+  }
+  return new Promise(r=>c.toBlob(b=>b.arrayBuffer().then(r),'image/png'));
+}
+async function place(buf,png,pos,size,which){
+  const o=await base(),im=png?await o.embedPng(buf):await o.embedJpg(buf),ps=o.getPages(),q=pos.toLowerCase();
+  ps.forEach((p,i)=>{
+    if(which==='First page'&&i||which==='Last page'&&i<ps.length-1)return;
+    const{width:w,height:h}=p.getSize(),W=w*{Small:.18,Medium:.3,Large:.5}[size],H=W*im.height/im.width,m=Math.min(w,h)*.05;
+    p.drawImage(im,{x:/left/.test(q)?m:/right/.test(q)?w-W-m:(w-W)/2,y:/top/.test(q)?h-H-m:/bottom/.test(q)?m:(h-H)/2,width:W,height:H,opacity:.85});
+  });
+  await openBytes(await o.save());
+}
 const T=[
 {n:'Merge PDF',d:'Append one or more PDFs to the current document (in selection order).',free:1,f:async()=>{const fs=await pick('application/pdf',1);if(!fs.length)return false;const o=await base();for(const f of fs){const s=await PD.load(await f.arrayBuffer(),{ignoreEncryption:true});(await o.copyPages(s,s.getPageIndices())).forEach(p=>o.addPage(p))}if(!doc)name=fs[0].name;await openBytes(await o.save())}},
 {n:'Split PDF',d:'Extract pages into a new PDF. Example: 1-3,5',ph:'1-3,5',f:async v=>{const o=await base(),idx=rng(v,o.getPageCount());if(!idx.length)throw Error('Enter valid page numbers');const n=await PD.create();(await n.copyPages(o,idx)).forEach(p=>n.addPage(p));await give(await n.save(),'split.pdf')}},
 {n:'Rotate PDF',d:'Rotate every page.',sel:['90','180','270'],f:async v=>{const o=await base();o.getPages().forEach(p=>p.setRotation(DG((p.getRotation().angle+ +v)%360)));await openBytes(await o.save())}},
 {n:'Watermark',d:'Stamp diagonal text on every page.',ph:'CONFIDENTIAL',f:async v=>{if(!v)throw Error('Enter watermark text');const o=await base(),f=await o.embedFont(SF.HelveticaBold);o.getPages().forEach(p=>{const{width:w,height:h}=p.getSize(),s=Math.min(80,w*.8/f.widthOfTextAtSize(v,1)),tw=f.widthOfTextAtSize(v,s),k=Math.SQRT1_2;p.drawText(v,{x:w/2-tw/2*k,y:h/2-tw/2*k,size:s,font:f,color:RG(.5,.5,.5),opacity:.3,rotate:DG(45)})});await openBytes(await o.save())}},
+{n:'Seal & stamp',d:'Add a round seal or rectangular stamp (e.g. APPROVED, PAID) to your pages.',fs:[['sel',['Round seal','Stamp box']],['txt','Stamp text','APPROVED'],['sel',['Red','Blue','Green','Black']],['sel',POS],['sel',['Small','Medium','Large']],['sel',['All pages','First page','Last page']]],f:async v=>{if(!v[1].trim())throw Error('Enter stamp text');await place(await stampPng(v[0],v[1].trim(),{Red:'#c62828',Blue:'#1d4ed8',Green:'#15803d',Black:'#111'}[v[2]]),1,v[3],v[4],v[5])}},
+{n:'Image stamp',d:'Place your own seal, logo or signature image (PNG/JPG) on pages.',fs:[['sel',POS],['sel',['Small','Medium','Large']],['sel',['All pages','First page','Last page']]],f:async v=>{const fs=await pick('image/png,image/jpeg');if(!fs.length)return false;await place(await fs[0].arrayBuffer(),/png/i.test(fs[0].type),v[0],v[1],v[2])}},
 {n:'Page numbers',d:'Add numbers at the bottom center.',sel:['1','1 / N'],f:async v=>{const o=await base(),f=await o.embedFont(SF.Helvetica),N=o.getPageCount();o.getPages().forEach((p,i)=>{const t=v==='1'?''+(i+1):(i+1)+' / '+N,w=p.getWidth();p.drawText(t,{x:w/2-f.widthOfTextAtSize(t,11)/2,y:20,size:11,font:f,color:RG(.2,.2,.2)})});await openBytes(await o.save())}},
 {n:'Crop PDF',d:'Trim equal margins (in points, 72 = 1 inch) from every page.',ph:'36',f:async v=>{const m=+v;if(!(m>0))throw Error('Enter a margin');const s=await base(),n=await PD.create();for(const p of s.getPages()){const{width:w,height:h}=p.getSize();if(w<=2*m||h<=2*m)throw Error('Margin too large');const e=await n.embedPage(p,{left:m,bottom:m,right:w-m,top:h-m});n.addPage([w-2*m,h-2*m]).drawPage(e)}await openBytes(await n.save())}},
 {n:'Compress PDF',d:'Shrinks size by turning pages into images. Text becomes unselectable.',sel:['Medium','Strong'],f:async v=>{await openBytes(await fromRaster(v==='Medium'?1.4:1,v==='Medium'?.65:.45))}},
@@ -235,11 +264,12 @@ T.forEach(t=>{
   const h=document.createElement('b');h.textContent=t.n;const p=document.createElement('p');p.textContent=t.d;c.append(h,p);
   if(t.sel){const s=document.createElement('select');t.sel.forEach(o=>s.add(new Option(o)));c.append(s)}
   else if(t.ph){const i=document.createElement('input');i.placeholder=t.ph;i.value=/^\d/.test(t.ph)&&!t.ph.includes('-')?t.ph:'';c.append(i)}
+  if(t.fs)t.fs.forEach(([k,s,d])=>{let e;if(k==='sel'){e=document.createElement('select');s.forEach(o=>e.add(new Option(o)))}else{e=document.createElement('input');e.placeholder=s;e.value=d||''}c.append(e)});
   const b=document.createElement('button');b.textContent=t.btn||'Apply';
   b.onclick=async()=>{
     if(!doc&&!t.free)return toast('Open a PDF first.');
-    const inp=c.querySelector('input,select'),old=b.textContent;b.disabled=true;b.textContent='Working…';
-    try{if(await t.f(inp?inp.value:'')!==false){$('md').hidden=true;toast(t.n+' done')}}catch(e){toast('Failed: '+(e&&e.message||e))}
+    const els=[...c.querySelectorAll('input,select')],old=b.textContent;b.disabled=true;b.textContent='Working…';
+    try{if(await t.f(t.fs?els.map(e=>e.value):els[0]?els[0].value:'')!==false){$('md').hidden=true;toast(t.n+' done')}}catch(e){toast('Failed: '+(e&&e.message||e))}
     b.disabled=false;b.textContent=old;
   };
   c.append(b);grid.append(c);
